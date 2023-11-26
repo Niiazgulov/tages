@@ -1,0 +1,5 @@
+env: "local"  
+storage_path: "../../internal/storage/img"  
+grpc:  
+  port: 44044  
+  timeout: 10h
