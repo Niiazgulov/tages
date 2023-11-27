@@ -25,7 +25,7 @@ func main() {
 	files := filesInFolder()
 
 	var actionchoice string
-	fmt.Println("Введите цифру нужного действия:\n 1. Отправить новое изображение \n 2. Получить список изображений \n 3. Загрузить изображение с сервера")
+	fmt.Println("Введите цифру нужного действия:\n 1. Отправить новое изображение на жесткий диск \n 2. Просмотр списка всех загруженных файлов \n 3. Загрузить изображение с сервера")
 	fmt.Fscan(os.Stdin, &actionchoice)
 
 	switch actionchoice {
@@ -51,8 +51,17 @@ func main() {
 		selectedFile := files[filechoiceInt-1]
 		client.UploadImage(strings.Join([]string{imagePath, selectedFile}, ""), selectedFile)
 
-	case "2": // TODO: IMPLEMENT
-		fmt.Println("coming soon...")
+	case "2":
+		res, err := client.InformImage2()
+		if err != nil {
+			log.Fatal("cannot get all images info into client main")
+		}
+		sliceofslice := res.GetResponse()
+		fmt.Printf("|%15s|%35s|%35s|\n", "Имя файла", "Дата создания", "Дата обновления")
+		for _, v := range sliceofslice {
+			slice := v.GetValue()
+			fmt.Printf("|%15s|%35s|%35s|\n", slice[0], slice[1], slice[2])
+		}
 
 	case "3": // TODO: IMPLEMENT
 		fmt.Println("coming soon...")

@@ -1,5 +1,6 @@
 env: "local"  
 storage_path: "../../internal/storage/img"  
+database_path: "postgres://postgres:180612@localhost:5432/urldb?sslmode=disable"
 grpc:  
   port: 44044  
   timeout: 10h

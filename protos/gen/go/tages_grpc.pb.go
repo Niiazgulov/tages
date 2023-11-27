@@ -29,8 +29,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ImageWorkerClient interface {
 	UploadImage(ctx context.Context, opts ...grpc.CallOption) (ImageWorker_UploadImageClient, error)
-	InformImage(ctx context.Context, in *InformRequest, opts ...grpc.CallOption) (*InformResponse, error)
-	DownloadImage(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*DownloadResponse, error)
+	InformImage(ctx context.Context, opts ...grpc.CallOption) (ImageWorker_InformImageClient, error)
+	DownloadImage(ctx context.Context, opts ...grpc.CallOption) (ImageWorker_DownloadImageClient, error)
 }
 
 type imageWorkerClient struct {
@@ -75,22 +75,72 @@ func (x *imageWorkerUploadImageClient) CloseAndRecv() (*UploadResponse, error) {
 	return m, nil
 }
 
-func (c *imageWorkerClient) InformImage(ctx context.Context, in *InformRequest, opts ...grpc.CallOption) (*InformResponse, error) {
-	out := new(InformResponse)
-	err := c.cc.Invoke(ctx, ImageWorker_InformImage_FullMethodName, in, out, opts...)
+func (c *imageWorkerClient) InformImage(ctx context.Context, opts ...grpc.CallOption) (ImageWorker_InformImageClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ImageWorker_ServiceDesc.Streams[1], ImageWorker_InformImage_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &imageWorkerInformImageClient{stream}
+	return x, nil
 }
 
-func (c *imageWorkerClient) DownloadImage(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*DownloadResponse, error) {
-	out := new(DownloadResponse)
-	err := c.cc.Invoke(ctx, ImageWorker_DownloadImage_FullMethodName, in, out, opts...)
+type ImageWorker_InformImageClient interface {
+	Send(*InformRequest) error
+	CloseAndRecv() (*InformResponse, error)
+	grpc.ClientStream
+}
+
+type imageWorkerInformImageClient struct {
+	grpc.ClientStream
+}
+
+func (x *imageWorkerInformImageClient) Send(m *InformRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *imageWorkerInformImageClient) CloseAndRecv() (*InformResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(InformResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *imageWorkerClient) DownloadImage(ctx context.Context, opts ...grpc.CallOption) (ImageWorker_DownloadImageClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ImageWorker_ServiceDesc.Streams[2], ImageWorker_DownloadImage_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &imageWorkerDownloadImageClient{stream}
+	return x, nil
+}
+
+type ImageWorker_DownloadImageClient interface {
+	Send(*DownloadRequest) error
+	CloseAndRecv() (*DownloadResponse, error)
+	grpc.ClientStream
+}
+
+type imageWorkerDownloadImageClient struct {
+	grpc.ClientStream
+}
+
+func (x *imageWorkerDownloadImageClient) Send(m *DownloadRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *imageWorkerDownloadImageClient) CloseAndRecv() (*DownloadResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(DownloadResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // ImageWorkerServer is the server API for ImageWorker service.
@@ -98,8 +148,8 @@ func (c *imageWorkerClient) DownloadImage(ctx context.Context, in *DownloadReque
 // for forward compatibility
 type ImageWorkerServer interface {
 	UploadImage(ImageWorker_UploadImageServer) error
-	InformImage(context.Context, *InformRequest) (*InformResponse, error)
-	DownloadImage(context.Context, *DownloadRequest) (*DownloadResponse, error)
+	InformImage(ImageWorker_InformImageServer) error
+	DownloadImage(ImageWorker_DownloadImageServer) error
 	mustEmbedUnimplementedImageWorkerServer()
 }
 
@@ -110,11 +160,11 @@ type UnimplementedImageWorkerServer struct {
 func (UnimplementedImageWorkerServer) UploadImage(ImageWorker_UploadImageServer) error {
 	return status.Errorf(codes.Unimplemented, "method UploadImage not implemented")
 }
-func (UnimplementedImageWorkerServer) InformImage(context.Context, *InformRequest) (*InformResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method InformImage not implemented")
+func (UnimplementedImageWorkerServer) InformImage(ImageWorker_InformImageServer) error {
+	return status.Errorf(codes.Unimplemented, "method InformImage not implemented")
 }
-func (UnimplementedImageWorkerServer) DownloadImage(context.Context, *DownloadRequest) (*DownloadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DownloadImage not implemented")
+func (UnimplementedImageWorkerServer) DownloadImage(ImageWorker_DownloadImageServer) error {
+	return status.Errorf(codes.Unimplemented, "method DownloadImage not implemented")
 }
 func (UnimplementedImageWorkerServer) mustEmbedUnimplementedImageWorkerServer() {}
 
@@ -155,40 +205,56 @@ func (x *imageWorkerUploadImageServer) Recv() (*UploadRequest, error) {
 	return m, nil
 }
 
-func _ImageWorker_InformImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InformRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ImageWorkerServer).InformImage(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ImageWorker_InformImage_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ImageWorkerServer).InformImage(ctx, req.(*InformRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _ImageWorker_InformImage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ImageWorkerServer).InformImage(&imageWorkerInformImageServer{stream})
 }
 
-func _ImageWorker_DownloadImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DownloadRequest)
-	if err := dec(in); err != nil {
+type ImageWorker_InformImageServer interface {
+	SendAndClose(*InformResponse) error
+	Recv() (*InformRequest, error)
+	grpc.ServerStream
+}
+
+type imageWorkerInformImageServer struct {
+	grpc.ServerStream
+}
+
+func (x *imageWorkerInformImageServer) SendAndClose(m *InformResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *imageWorkerInformImageServer) Recv() (*InformRequest, error) {
+	m := new(InformRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(ImageWorkerServer).DownloadImage(ctx, in)
+	return m, nil
+}
+
+func _ImageWorker_DownloadImage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ImageWorkerServer).DownloadImage(&imageWorkerDownloadImageServer{stream})
+}
+
+type ImageWorker_DownloadImageServer interface {
+	SendAndClose(*DownloadResponse) error
+	Recv() (*DownloadRequest, error)
+	grpc.ServerStream
+}
+
+type imageWorkerDownloadImageServer struct {
+	grpc.ServerStream
+}
+
+func (x *imageWorkerDownloadImageServer) SendAndClose(m *DownloadResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *imageWorkerDownloadImageServer) Recv() (*DownloadRequest, error) {
+	m := new(DownloadRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
 	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ImageWorker_DownloadImage_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ImageWorkerServer).DownloadImage(ctx, req.(*DownloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 // ImageWorker_ServiceDesc is the grpc.ServiceDesc for ImageWorker service.
@@ -197,20 +263,21 @@ func _ImageWorker_DownloadImage_Handler(srv interface{}, ctx context.Context, de
 var ImageWorker_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "imageworker.ImageWorker",
 	HandlerType: (*ImageWorkerServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "InformImage",
-			Handler:    _ImageWorker_InformImage_Handler,
-		},
-		{
-			MethodName: "DownloadImage",
-			Handler:    _ImageWorker_DownloadImage_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "UploadImage",
 			Handler:       _ImageWorker_UploadImage_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "InformImage",
+			Handler:       _ImageWorker_InformImage_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "DownloadImage",
+			Handler:       _ImageWorker_DownloadImage_Handler,
 			ClientStreams: true,
 		},
 	},
