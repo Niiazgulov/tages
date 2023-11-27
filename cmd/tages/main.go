@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,7 +14,11 @@ import (
 func main() {
 	cfg := config.MustLoad()
 	imageStore := storage.NewDiskImageStore(cfg.StoragePath)
-	appl := app.New(cfg.GRPC.Port, cfg.StoragePath, imageStore)
+	repo, err := storage.NewDB(cfg.DBPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	appl := app.New(cfg.GRPC.Port, cfg.StoragePath, imageStore, repo)
 	go appl.GRPCServ.Run()
 
 	stop := make(chan os.Signal, 1)

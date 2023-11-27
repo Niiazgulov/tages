@@ -9,10 +9,10 @@ import (
 )
 
 type Config struct {
-	Env            string     `yaml:"env" env-default:"local"`
-	StoragePath    string     `yaml:"storage_path" env-required:"true"`
-	GRPC           GRPCConfig `yaml:"grpc"`
-	MigrationsPath string
+	Env         string     `yaml:"env" env-default:"local"`
+	StoragePath string     `yaml:"storage_path" env-required:"true"`
+	DBPath      string     `yaml:"database_path"`
+	GRPC        GRPCConfig `yaml:"grpc"`
 }
 
 type GRPCConfig struct {

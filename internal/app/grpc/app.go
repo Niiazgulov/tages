@@ -13,13 +13,14 @@ type App struct {
 	gRPCServer   *grpc.Server
 	port         int
 	imgProcessor storage.ImageProcessor
+	repo         storage.ImageDB
 }
 
-func New(port int, imgProcessor storage.ImageProcessor) *App {
+func New(port int, imgProcessor storage.ImageProcessor, repo storage.ImageDB) *App {
 	gRPCServer := grpc.NewServer()
-	imageworkergrpc.Register(gRPCServer, imgProcessor)
+	imageworkergrpc.Register(gRPCServer, imgProcessor, repo)
 
-	return &App{gRPCServer: gRPCServer, port: port, imgProcessor: imgProcessor}
+	return &App{gRPCServer: gRPCServer, port: port, imgProcessor: imgProcessor, repo: repo}
 }
 
 func (a *App) Run() error {

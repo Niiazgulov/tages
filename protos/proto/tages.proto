@@ -12,27 +12,31 @@ message UploadRequest {
 }
 
 message UploadResponse {
-    string image_id = 1;
-    string created_at = 2;
+    string filename = 1;
+    string image_id = 2;
+    string created_at = 3;
 }
 
 message InformRequest {
-    string all_images = 1;
 }
 
 message InformResponse {
-    ImageInfo image_info = 1;
+    repeated InfoSlice response = 1;
 }
 
+message InfoSlice {
+    repeated string value = 2;
+}
+  
 message ImageInfo {
     string image_id = 1;
-    string created_at = 2;
-    string changed_at = 3;
-    string path = 4;
+    string filename = 2;
+    string created_at = 3;
+    string changed_at = 4;
 }
 
 message DownloadRequest {
-    int64 image_id = 1;
+    string filename = 1;
 }
 
 message DownloadResponse {
@@ -46,6 +50,16 @@ service ImageWorker{
             body : "*"
           };
     };
-    rpc InformImage(InformRequest) returns (InformResponse);
-    rpc DownloadImage(DownloadRequest) returns (DownloadResponse);   
+    rpc InformImage(stream InformRequest) returns (InformResponse) {
+        option (google.api.http) = {
+            post : "/getinfo"
+            body : "*"
+          };
+    };
+    rpc DownloadImage(stream DownloadRequest) returns (DownloadResponse){
+        option (google.api.http) = {
+            post : "/download_image"
+            body : "*"
+          };
+    };   
 }

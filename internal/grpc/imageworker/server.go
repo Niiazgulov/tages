@@ -3,6 +3,8 @@ package imageworker
 import (
 	"bytes"
 	"context"
+
+	// "errors"
 	"io"
 	"log"
 	"time"
@@ -17,10 +19,11 @@ import (
 type serverAPI struct {
 	pb.UnimplementedImageWorkerServer
 	imgProcessor storage.ImageProcessor
+	repo         storage.ImageDB
 }
 
-func Register(gRPCServer *grpc.Server, imgProcessor storage.ImageProcessor) {
-	pb.RegisterImageWorkerServer(gRPCServer, &serverAPI{imgProcessor: imgProcessor})
+func Register(gRPCServer *grpc.Server, imgProcessor storage.ImageProcessor, repo storage.ImageDB) {
+	pb.RegisterImageWorkerServer(gRPCServer, &serverAPI{imgProcessor: imgProcessor, repo: repo})
 }
 
 func logError(err error) error {
@@ -33,9 +36,9 @@ func logError(err error) error {
 const maxImageSize = 1 << 20
 
 func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) error {
+	var newImage storage.ImagesInfo
 	imageData := bytes.Buffer{}
 	imageSize := 0
-	var filename string
 
 	for {
 		err := contextError(stream.Context())
@@ -53,7 +56,7 @@ func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) er
 
 		chunk := req.GetImageData()
 		size := len(chunk)
-		filename = req.GetFilename()
+		newImage.Filename = req.GetFilename()
 
 		imageSize += size
 		if imageSize > maxImageSize {
@@ -65,16 +68,17 @@ func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) er
 			return logError(status.Errorf(codes.Internal, "cannot write chunk data: %v", err))
 		}
 	}
-
-	imageID, err := server.imgProcessor.SaveNewImage(imageData, filename)
+	var err error
+	newImage.CreatedAt = time.Now().Format(time.RFC850)
+	newImage.ImageId, err = server.imgProcessor.SaveNewImage(imageData, newImage, server.repo)
 	if err != nil {
 		return logError(status.Errorf(codes.Internal, "cannot save image to the store: %v", err))
 	}
 
-	createdTime := time.Now().Format(time.RFC850)
 	res := &pb.UploadResponse{
-		ImageId:   imageID,
-		CreatedAt: createdTime,
+		ImageId:   newImage.ImageId,
+		Filename:  newImage.Filename,
+		CreatedAt: newImage.CreatedAt,
 	}
 
 	err = stream.SendAndClose(res)
@@ -82,7 +86,7 @@ func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) er
 		return logError(status.Errorf(codes.Unknown, "cannot send response: %v", err))
 	}
 
-	log.Printf("saved image %s with id: %s, at: %s", filename, imageID, createdTime)
+	log.Printf("saved image %s with id: %s, at: %s", newImage.Filename, newImage.ImageId, newImage.CreatedAt)
 	return nil
 }
 
@@ -97,11 +101,40 @@ func contextError(ctx context.Context) error {
 	}
 }
 
-func (s *serverAPI) Inform(
-	ctx context.Context,
-	in *pb.InformRequest,
-) (*pb.InformResponse, error) {
-	panic("implement me")
+func (s *serverAPI) InformImage(stream pb.ImageWorker_InformImageServer) error {
+	err := contextError(stream.Context())
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot receive chunk data: %v", err))
+	}
+
+	records, err := s.imgProcessor.ImagesView(s.repo)
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot send resquest to get image info (server): %v", err))
+	}
+
+	var resp []*pb.InfoSlice
+	for _, v := range records {
+		entry := &pb.InfoSlice{Value: []string{v.Filename, v.CreatedAt, v.ChangedAt}}
+		resp = append(resp, entry)
+	}
+
+	res := &pb.InformResponse{
+		Response: resp,
+	}
+
+	err = stream.SendAndClose(res)
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot send response: %v", err))
+	}
+
+	log.Println("all image's info successfully sended to client")
+
+	return nil
 }
 
 func (s *serverAPI) Download(

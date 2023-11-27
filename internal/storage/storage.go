@@ -5,58 +5,92 @@ import (
 	"context"
 	"fmt"
 	"os"
-
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
-
-	pb "github.com/Niiazgulov/tages.git/protos/gen/go"
 )
 
 type ImageProcessor interface {
-	SaveNewImage(img bytes.Buffer, filename string) (string, error)
-	ImagesView(ctx context.Context) ([]pb.ImageInfo, error)           // TODO: IMPLEMENT
+	SaveNewImage(img bytes.Buffer, newImage ImagesInfo, repo ImageDB) (string, error)
+	ImagesView(repo ImageDB) ([]ImagesInfo, error)
 	SendBack(ctx context.Context, imgId string) (bytes.Buffer, error) // TODO: IMPLEMENT
 }
 
 type DiskImageStore struct {
 	mutex       sync.RWMutex
 	imageFolder string
-	images      map[string]*pb.ImageInfo
+}
+
+type ImagesInfo struct {
+	ImageId   string
+	Filename  string
+	CreatedAt string
+	ChangedAt string
 }
 
 func NewDiskImageStore(imageFolder string) *DiskImageStore {
 	return &DiskImageStore{
 		imageFolder: imageFolder,
-		images:      make(map[string]*pb.ImageInfo),
 	}
 }
 
-func (store *DiskImageStore) ImagesView(ctx context.Context) ([]pb.ImageInfo, error) {
-	return nil, nil
+func (store *DiskImageStore) ImagesView(repo ImageDB) ([]ImagesInfo, error) {
+	records, err := repo.GetAllInfo()
+	if err != nil {
+		return nil, fmt.Errorf("cannot download images info from db: %w", err)
+	}
+
+	return records, nil
 }
 
 func (store *DiskImageStore) SendBack(ctx context.Context, imgId string) (bytes.Buffer, error) {
+
 	return bytes.Buffer{}, nil
 }
 
-func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, filename string) (string, error) {
+func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, newImage ImagesInfo, repo ImageDB) (string, error) {
 	imageID, err := uuid.NewRandom()
 	if err != nil {
 		return "", fmt.Errorf("cannot generate image id: %w", err)
 	}
-	files := filesInFolder(store.imageFolder)
-	_, ok := files[filename]
-	if ok {
-		return "", fmt.Errorf("image already exists on the server! %w", err)
-	}
+	newImage.ImageId = imageID.String()
 
-	imagePath := strings.Join([]string{store.imageFolder, filename}, "/")
+	imagePath := strings.Join([]string{store.imageFolder, newImage.Filename}, "/")
+
+	files := filesInFolder(store.imageFolder)
+	_, ok := files[newImage.Filename]
+	if ok || files == nil {
+		err := os.Remove(imagePath)
+		if err != nil {
+			return "", fmt.Errorf("cannot delete old image: %v", err)
+		}
+
+		file, err := os.Create(imagePath)
+		if err != nil {
+			return "", fmt.Errorf("cannot create image file: %w", err)
+		}
+
+		_, err = img.WriteTo(file)
+		if err != nil {
+			return "", fmt.Errorf("cannot write image to file: %w", err)
+		}
+
+		store.mutex.Lock()
+		defer store.mutex.Unlock()
+		newImage.ChangedAt = time.Now().Format(time.RFC850)
+		oldImageId, err := repo.UpdateInfo(newImage)
+		if err != nil {
+			return "", fmt.Errorf("cannot save image info to the DB: %v", err)
+		}
+
+		return oldImageId, nil
+	}
 
 	file, err := os.Create(imagePath)
 	if err != nil {
-		return "", fmt.Errorf("ich cannot create image file: %w", err)
+		return "", fmt.Errorf("cannot create image file: %w", err)
 	}
 
 	_, err = img.WriteTo(file)
@@ -66,12 +100,13 @@ func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, filename string) (st
 
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
-
-	store.images[imageID.String()] = &pb.ImageInfo{
-		Path: imagePath,
+	newImage.ChangedAt = newImage.CreatedAt
+	err = repo.SaveNewInfo(newImage)
+	if err != nil {
+		return "", fmt.Errorf("save image info to the DB: %w", err)
 	}
 
-	return imageID.String(), nil
+	return newImage.ImageId, nil
 }
 
 func filesInFolder(imagesFolderPath string) map[string]int {
