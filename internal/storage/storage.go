@@ -2,8 +2,9 @@ package storage
 
 import (
 	"bytes"
-	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -12,10 +13,14 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	ErrImgNotFound = errors.New("image not found")
+)
+
 type ImageProcessor interface {
 	SaveNewImage(img bytes.Buffer, newImage ImagesInfo, repo ImageDB) (string, error)
 	ImagesView(repo ImageDB) ([]ImagesInfo, error)
-	SendBack(ctx context.Context, imgId string) (bytes.Buffer, error) // TODO: IMPLEMENT
+	GetImage(filename string) ([]byte, error)
 }
 
 type DiskImageStore struct {
@@ -36,20 +41,6 @@ func NewDiskImageStore(imageFolder string) *DiskImageStore {
 	}
 }
 
-func (store *DiskImageStore) ImagesView(repo ImageDB) ([]ImagesInfo, error) {
-	records, err := repo.GetAllInfo()
-	if err != nil {
-		return nil, fmt.Errorf("cannot download images info from db: %w", err)
-	}
-
-	return records, nil
-}
-
-func (store *DiskImageStore) SendBack(ctx context.Context, imgId string) (bytes.Buffer, error) {
-
-	return bytes.Buffer{}, nil
-}
-
 func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, newImage ImagesInfo, repo ImageDB) (string, error) {
 	imageID, err := uuid.NewRandom()
 	if err != nil {
@@ -59,7 +50,7 @@ func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, newImage ImagesInfo,
 
 	imagePath := strings.Join([]string{store.imageFolder, newImage.Filename}, "/")
 
-	files := filesInFolder(store.imageFolder)
+	files := filesInFolderMap(store.imageFolder)
 	_, ok := files[newImage.Filename]
 	if ok || files == nil {
 		err := os.Remove(imagePath)
@@ -109,7 +100,48 @@ func (store *DiskImageStore) SaveNewImage(img bytes.Buffer, newImage ImagesInfo,
 	return newImage.ImageId, nil
 }
 
-func filesInFolder(imagesFolderPath string) map[string]int {
+func (store *DiskImageStore) ImagesView(repo ImageDB) ([]ImagesInfo, error) {
+	files := filesInFolderSlice(store.imageFolder)
+	if files == nil {
+		return nil, fmt.Errorf("storage is empty - no files here: %v", ErrImgNotFound)
+	}
+
+	records, err := repo.GetAllInfo(files)
+	if err != nil {
+		return nil, fmt.Errorf("cannot download images info from db: %w", err)
+	}
+
+	return records, nil
+}
+
+func (store *DiskImageStore) GetImage(filename string) ([]byte, error) {
+	files := filesInFolderMap(store.imageFolder)
+	if files == nil {
+		return nil, fmt.Errorf("storage is empty - no files here: %v", ErrImgNotFound)
+	}
+
+	_, ok := files[filename]
+	if !ok {
+		return nil, fmt.Errorf("cannot find such image in storage: %v", ErrImgNotFound)
+	}
+
+	imagePath := strings.Join([]string{store.imageFolder, filename}, "/")
+
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open file: %v", err)
+	}
+	defer file.Close()
+
+	byteImg, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("cannot io.readall file to byte: %v", err)
+	}
+
+	return byteImg, nil
+}
+
+func filesInFolderMap(imagesFolderPath string) map[string]int {
 	dir, err := os.Open(imagesFolderPath)
 	if err != nil {
 		return nil
@@ -125,5 +157,24 @@ func filesInFolder(imagesFolderPath string) map[string]int {
 		filenames[file.Name()] = i
 	}
 
+	return filenames
+}
+
+func filesInFolderSlice(imagesFolderPath string) []string {
+	dir, err := os.Open(imagesFolderPath)
+	if err != nil {
+		return nil
+	}
+	defer dir.Close()
+
+	files, err := dir.Readdir(-1)
+	if err != nil {
+		return nil
+	}
+
+	filenames := []string{}
+	for _, file := range files {
+		filenames = append(filenames, file.Name())
+	}
 	return filenames
 }

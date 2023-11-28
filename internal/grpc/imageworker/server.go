@@ -3,8 +3,6 @@ package imageworker
 import (
 	"bytes"
 	"context"
-
-	// "errors"
 	"io"
 	"log"
 	"time"
@@ -36,6 +34,9 @@ func logError(err error) error {
 const maxImageSize = 1 << 20
 
 func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) error {
+	limiter := make(chan struct{}, 10)
+	limiter <- struct{}{}
+
 	var newImage storage.ImagesInfo
 	imageData := bytes.Buffer{}
 	imageSize := 0
@@ -75,6 +76,8 @@ func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) er
 		return logError(status.Errorf(codes.Internal, "cannot save image to the store: %v", err))
 	}
 
+	<-limiter
+
 	res := &pb.UploadResponse{
 		ImageId:   newImage.ImageId,
 		Filename:  newImage.Filename,
@@ -86,7 +89,7 @@ func (server *serverAPI) UploadImage(stream pb.ImageWorker_UploadImageServer) er
 		return logError(status.Errorf(codes.Unknown, "cannot send response: %v", err))
 	}
 
-	log.Printf("saved image %s with id: %s, at: %s", newImage.Filename, newImage.ImageId, newImage.CreatedAt)
+	log.Printf("saved image %s at: %s", newImage.Filename, newImage.CreatedAt)
 	return nil
 }
 
@@ -102,6 +105,9 @@ func contextError(ctx context.Context) error {
 }
 
 func (s *serverAPI) InformImage(stream pb.ImageWorker_InformImageServer) error {
+	limiter := make(chan struct{}, 100)
+	limiter <- struct{}{}
+
 	err := contextError(stream.Context())
 	if err != nil {
 		return err
@@ -109,13 +115,15 @@ func (s *serverAPI) InformImage(stream pb.ImageWorker_InformImageServer) error {
 
 	_, err = stream.Recv()
 	if err != nil {
-		return logError(status.Errorf(codes.Unknown, "cannot receive chunk data: %v", err))
+		return logError(status.Errorf(codes.Unknown, "cannot receive request: %v", err))
 	}
 
 	records, err := s.imgProcessor.ImagesView(s.repo)
 	if err != nil {
 		return logError(status.Errorf(codes.Unknown, "cannot send resquest to get image info (server): %v", err))
 	}
+
+	<-limiter
 
 	var resp []*pb.InfoSlice
 	for _, v := range records {
@@ -137,9 +145,38 @@ func (s *serverAPI) InformImage(stream pb.ImageWorker_InformImageServer) error {
 	return nil
 }
 
-func (s *serverAPI) Download(
-	ctx context.Context,
-	in *pb.DownloadRequest,
-) (*pb.DownloadResponse, error) {
-	panic("implement me")
+func (s *serverAPI) DownloadImage(stream pb.ImageWorker_DownloadImageServer) error {
+	limiter := make(chan struct{}, 10)
+	limiter <- struct{}{}
+
+	err := contextError(stream.Context())
+	if err != nil {
+		return err
+	}
+
+	req, err := stream.Recv()
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot receive chunk data: %v", err))
+	}
+
+	filename := req.GetFilename()
+	img, err := s.imgProcessor.GetImage(filename)
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot send resquest to get image (server): %v", err))
+	}
+
+	<-limiter
+
+	res := &pb.DownloadResponse{
+		ImageData: img,
+	}
+
+	err = stream.SendAndClose(res)
+	if err != nil {
+		return logError(status.Errorf(codes.Unknown, "cannot send response: %v", err))
+	}
+
+	log.Println("image successfully sended to client")
+
+	return nil
 }
