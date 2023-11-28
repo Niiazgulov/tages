@@ -13,7 +13,7 @@ import (
 type ImageDB interface {
 	SaveNewInfo(imageInfo ImagesInfo) error
 	UpdateInfo(imageInfo ImagesInfo) (string, error)
-	GetAllInfo() ([]ImagesInfo, error)
+	GetAllInfo(files []string) ([]ImagesInfo, error)
 	Close()
 }
 
@@ -74,9 +74,10 @@ func (d *DataBase) UpdateInfo(imageInfo ImagesInfo) (string, error) {
 	return imageID, nil
 }
 
-func (d *DataBase) GetAllInfo() ([]ImagesInfo, error) {
-	query := `SELECT filename, created_at, changed_at FROM images`
-	rows, err := d.DB.Query(query)
+func (d *DataBase) GetAllInfo(files []string) ([]ImagesInfo, error) {
+	query2 := `SELECT filename, created_at, changed_at FROM images WHERE filename = ANY ($1)`
+
+	rows, err := d.DB.Query(query2, files)
 	if err != nil {
 		return nil, fmt.Errorf("unable to return records from DB: %w", err)
 	}

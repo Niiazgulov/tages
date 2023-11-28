@@ -64,10 +64,10 @@ func (imgClient *imgClient) UploadImage(imagePath string, filename string) {
 		log.Fatal("cannot receive response: ", err)
 	}
 
-	log.Printf("image %s uploaded with id: %s, at: %s", filename, res.GetImageId(), res.GetCreatedAt())
+	log.Printf("image %s uploaded at: %s", filename, res.GetCreatedAt())
 }
 
-func (imgClient *imgClient) InformImage2() (*pb.InformResponse, error) {
+func (imgClient *imgClient) InformImage() (*pb.InformResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -90,6 +90,25 @@ func (imgClient *imgClient) InformImage2() (*pb.InformResponse, error) {
 	return resp, nil
 }
 
-func (imgClient *imgClient) DownloadImage(filename string) {
-	// TODO: IMPLEMENT
+func (imgClient *imgClient) DownloadImage(filename string) (*pb.DownloadResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := imgClient.service.DownloadImage(ctx)
+	if err != nil {
+		log.Fatal("cannot call download_image method: ", err)
+	}
+
+	req := &pb.DownloadRequest{Filename: filename}
+	err = stream.Send(req)
+	if err != nil {
+		log.Fatal("cannot send request to server: ", err)
+	}
+
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Fatal("I cannot receive response: ", err)
+	}
+
+	return resp, nil
 }
